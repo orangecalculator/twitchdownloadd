@@ -165,6 +165,9 @@ def download_video_from_playlist_url(url_playlist, tmpdir, download_filename, ma
                 f.write(chunk)
     
     def download_video_part(url, filename):
+        if os.path.isfile(filename):
+            return
+        
         for _ in range(max_retries):
             try:
                 _download_video_part(url, filename)
@@ -361,12 +364,13 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
     
     if not is_live and not cache_only:
         for videoid in list(video_pending.keys()):
-            try:
-                download_video_by_master_m3u8(video_pending[videoid])
-                del video_pending[videoid]
-            except Exception as e:
-                print("exception occurred while downloading video")
-                print(e)
+            if videoid not in downloaded_videos:
+                try:
+                    download_video_by_master_m3u8(video_pending[videoid])
+                    del video_pending[videoid]
+                except Exception as e:
+                    print("exception occurred while downloading video")
+                    print(e)
 
 def do_parse_args(argv):
     import argparse
