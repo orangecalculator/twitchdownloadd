@@ -285,7 +285,7 @@ def tmpdir_video(video_id):
 
 video_pending = dict()
 
-def download_videos(channelname, channelid=None, **kwargs):
+def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
     if channelid is None:
         channelid = get_channelid(channelname)
     
@@ -336,7 +336,7 @@ def download_videos(channelname, channelid=None, **kwargs):
                 "video": video_filename,
             }
     
-    if not is_live:
+    if not is_live and not cache_only:
         for videoid in list(video_pending.keys()):
             try:
                 with open(video_pending[videoid]["master_playlist"], "r") as f:
@@ -446,7 +446,7 @@ def main():
 
     download_cached_videos()
     while True:
-        download_videos(config["channelname"], config["channelid"], max_retry=config["max_retry"], max_workers=config["max_workers"])
+        download_videos(config["channelname"], config["channelid"], cache_only=config["cache_only"], max_retry=config["max_retry"], max_workers=config["max_workers"])
         
         print(f"\rSleeping at {datetime.now()}", end='')
         time.sleep(config["polling_time"])
