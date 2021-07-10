@@ -368,9 +368,6 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
                 print("exception occurred while downloading video")
                 print(e)
 
-channelname = "gandahyo"
-channelid = "548993132"
-
 def do_parse_args(argv):
     import argparse
     parser = argparse.ArgumentParser()
