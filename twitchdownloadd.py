@@ -283,7 +283,33 @@ def tmpdir_video(video_id):
         os.mkdir(tmpdir)
     return tmpdir
 
-video_pending = dict()
+re_master_m3u8_filename = re.compile(r"index_(?P<publishdate>\d*)_(?P<videoid>\d*)_(?P<channelname>.*).m3u8")
+def download_video_by_master_m3u8(master_m3u8_filename):
+    tmpdir = os.path.dirname(master_m3u8_filename)
+    match = re_master_m3u8_filename.fullmatch(os.path.basename(master_m3u8_filename))
+
+    publishdate = match.group("publishdate")
+    videoid = match.group("videoid")
+    channelname = match.group("channelname")
+
+    video_filename = f"{publishdate}_{videoid}_{channelname}.mp4"
+
+    print(f"downloading video {videoid} to {video_filename}")
+
+    with open(master_m3u8_filename, "r") as f:
+        master_m3u8 = f.read()
+    
+    try:
+        videolist = parse_master_m3u8(master_m3u8)
+        quality = get_best_quality(videolist)
+        download_video_from_playlist_url(
+            videolist[quality]["url"],
+            tmpdir,
+            video_filename
+        )
+    except Exception as e:
+        print("exception occurred while downloading video by master_m3u8")
+        print(e)
 
 def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
     if channelid is None:
@@ -300,6 +326,7 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
         return
     
     downloaded_videos = find_downloaded_videos()
+    video_pending = find_cached_videos()
 
     try:
         videolist_response = get_videos_channel(channelid)
@@ -330,78 +357,15 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
 
             print(f"video {videoid} will be downloaded to {video_filename}")
 
-            video_pending[videoid] = {
-                "master_playlist": master_m3u8_filename,
-                "tmpdir": tmpdir,
-                "video": video_filename,
-            }
+            video_pending[videoid] = master_m3u8_filename
     
     if not is_live and not cache_only:
         for videoid in list(video_pending.keys()):
             try:
-                with open(video_pending[videoid]["master_playlist"], "r") as f:
-                    master_m3u8 = f.read()
-                videolist = parse_master_m3u8(master_m3u8)
-                quality = get_best_quality(videolist)
-                download_video_from_playlist_url(
-                    videolist[quality]["url"], 
-                    video_pending[videoid]["tmpdir"],
-                    video_pending[videoid]["video"],
-                    **kwargs
-                    )
+                download_video_by_master_m3u8(video_pending[videoid])
                 del video_pending[videoid]
             except Exception as e:
                 print("exception occurred while downloading video")
-                print(e)
-
-def download_video_by_url(video_id, base_uri, video_filename, len_known_segments=0, guess_interval=60, nworkers=8):
-    from twitchdl import download
-    
-    tmpdir = tmpdir_video(video_id)
-
-    download.download_files(base_uri, tmpdir, 
-        guess_vod_paths(base_uri, len_known_segments, guess_interval), nworkers)
-    join_video_naive(tmpdir, video_filename)
-
-re_master_m3u8_filename = re.compile(r"index_(?P<publishdate>\d*)_(?P<videoid>\d*)_(?P<channelname>.*).m3u8")
-def download_video_by_master_m3u8(master_m3u8_filename):
-    tmpdir = os.path.dirname(master_m3u8_filename)
-    match = re_master_m3u8_filename.fullmatch(os.path.basename(master_m3u8_filename))
-
-    publishdate = match.group("publishdate")
-    videoid = match.group("videoid")
-    channelname = match.group("channelname")
-
-    video_filename = f"{publishdate}_{videoid}_{channelname}.mp4"
-
-    print(f"downloading video {videoid} to {video_filename}")
-
-    with open(master_m3u8_filename, "r") as f:
-        master_m3u8 = f.read()
-    
-    try:
-        videolist = parse_master_m3u8(master_m3u8)
-        quality = get_best_quality(videolist)
-        download_video_from_playlist_url(
-            videolist[quality]["url"],
-            tmpdir,
-            video_filename
-        )
-    except Exception as e:
-        print("exception occurred while downloading video by master_m3u8")
-        print(e)
-
-def download_cached_videos():
-    downloaded_videos = find_downloaded_videos()
-    cached_videos = find_cached_videos()
-
-    for videoid in list(cached_videos.keys()):
-        if videoid not in downloaded_videos:
-            try:
-                download_video_by_master_m3u8(cached_videos[videoid])
-                del cached_videos[videoid]
-            except Exception as e:
-                print("exception occurred while downloading cached videos")
                 print(e)
 
 channelname = "gandahyo"
@@ -443,8 +407,7 @@ def parse_args():
 
 def main():
     config = parse_args()
-
-    download_cached_videos()
+    
     while True:
         download_videos(config["channelname"], config["channelid"], cache_only=config["cache_only"], max_retry=config["max_retry"], max_workers=config["max_workers"])
         
