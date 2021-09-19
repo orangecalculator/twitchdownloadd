@@ -310,7 +310,7 @@ def download_video_by_master_m3u8(master_m3u8_filename):
             tmpdir,
             video_filename
         )
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print("exception occurred while downloading video by master_m3u8")
         print(e)
 
@@ -323,7 +323,7 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
         stream_response = stream_response.json()
 
         is_live = (len(stream_response["data"]) != 0)
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print("exception occurred while fetching stream information")
         print(e)
         return
@@ -334,7 +334,7 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
     try:
         videolist_response = get_videos_channel(channelid)
         videolist_response = videolist_response.json()
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print("exception occurred while fetching video list")
         print(e)
         return
@@ -353,7 +353,7 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
                 master_m3u8_filename = os.path.join(tmpdir, master_m3u8_filename)
                 with open(master_m3u8_filename, 'w') as f:
                     f.write(master_m3u8)
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 print("exception occurred while fetching master playlist")
                 print(e)
                 continue
@@ -368,7 +368,7 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
                 try:
                     download_video_by_master_m3u8(video_pending[videoid])
                     del video_pending[videoid]
-                except Exception as e:
+                except requests.exceptions.RequestException as e:
                     print("exception occurred while downloading video")
                     print(e)
 
