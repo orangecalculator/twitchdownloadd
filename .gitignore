@@ -1,1 +1,9 @@
+
+.twitchdownloadd*
+
+ffmpeg*
+
 tmp_*
+*.mp4
+
+.vs*
