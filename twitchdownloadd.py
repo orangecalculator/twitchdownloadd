@@ -297,6 +297,9 @@ def download_video_by_master_m3u8(master_m3u8_filename):
 
     video_filename = f"{publishdate}_{videoid}_{channelname}.mp4"
 
+    if os.path.isfile(video_filename):
+        return
+
     print(f"downloading video {videoid} to {video_filename}")
 
     with open(master_m3u8_filename, "r") as f:
@@ -314,9 +317,8 @@ def download_video_by_master_m3u8(master_m3u8_filename):
         print("exception occurred while downloading video by master_m3u8")
         print(e)
 
-def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
-    if channelid is None:
-        channelid = get_channelid(channelname)
+def download_videos(channelname, db, cache_only=False, **kwargs):
+    channelid = db.get_channelid(channelname)
     
     try:
         stream_response = get_stream(channelid)
@@ -327,9 +329,6 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
         print("exception occurred while fetching stream information")
         print(e)
         return
-    
-    downloaded_videos = find_downloaded_videos()
-    video_pending = find_cached_videos()
 
     try:
         videolist_response = get_videos_channel(channelid)
@@ -340,7 +339,8 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
         return
     
     for video in videolist_response["data"]:
-        if video["id"] not in downloaded_videos and video["id"] not in video_pending:
+        record = db.get_download_record(channelname, video["id"])
+        if record is None:
             videoid = video["id"]
             publishdate = dateutil.parser.parse(video["published_at"]).astimezone().strftime("%Y%m%d")
 
@@ -360,47 +360,122 @@ def download_videos(channelname, channelid=None, cache_only=False, **kwargs):
 
             print(f"video {videoid} will be downloaded to {video_filename}")
 
-            video_pending[videoid] = master_m3u8_filename
+            record = {
+                "videoid": videoid,
+                "publishdate": publishdate,
+                "status": "pending",
+                "master_m3u8": master_m3u8_filename
+            }
+            db.set_download_record(channelname, videoid, record)
     
     if not is_live and not cache_only:
-        for videoid in list(video_pending.keys()):
-            if videoid not in downloaded_videos:
+        for videoid in db.get_download_record_list(channelname):
+            record = db.get_download_record(channelname, videoid)
+            if record["status"] == "pending":
                 try:
-                    download_video_by_master_m3u8(video_pending[videoid])
-                    del video_pending[videoid]
+                    download_video_by_master_m3u8(record["master_m3u8"])
+                    record["status"] = "complete"
+                    db.set_download_record(channelname, videoid, record)
                 except requests.exceptions.RequestException as e:
                     print("exception occurred while downloading video")
                     print(e)
+
+class channeldb:
+    def __init__(self, dbfilename):
+        self.dbfilename = dbfilename
+        
+        if os.path.isfile(self.dbfilename):
+            with open(dbfilename, "r") as f:
+                self.db = json.load(f)
+        else:
+            self.db = dict()
+    
+    def _sync_db(self):
+        with open(self.dbfilename, "w") as f:
+            json.dump(self.db, f, indent=4)
+    
+    def _fetch_channelinfo(self, channelname):
+        if channelname not in self.db:
+            channelid = get_channelid(channelname)
+
+            self.db[channelname] = {
+                "id": channelid,
+                "downloaded": dict(),
+            }
+    
+    def get_channelid(self, channelname):
+        if channelname not in self.db:
+            try:
+                self._fetch_channelinfo(channelname)
+
+                self._sync_db()
+            except requests.exceptions.RequestException as e:
+                print(f"fetching channel {channelname} info failed, ignoring")
+                print(e)
+                return
+
+        return self.db[channelname]["id"]
+    
+    def set_streaming_status(self, channelname, status):
+        self.db[channelname]["streaming"] = status
+    
+    def is_streaming(self, channelname):
+        return self.db[channelname]["streaming"]
+    
+    def get_download_record_list(self, channelname):
+        try:
+            return list(self.db[channelname]["downloaded"].keys())
+        except KeyError:
+            return list()
+
+    def get_download_record(self, channelname, videoid):
+        try:
+            return self.db[channelname]["downloaded"][videoid]
+        except KeyError:
+            return None
+    
+    def set_download_record(self, channelname, videoid, videoinfo=None):
+        if channelname not in self.db:
+            self._fetch_channelinfo(channelname)
+        
+        self.db[channelname]["downloaded"][videoid] = videoinfo
+        with open(self.dbfilename, "w") as f:
+            json.dump(self.db, f, indent=4)
+    
+    # Maybe clear entries in the future (i.e. exclude entries other than parameter channel_videos)
 
 def do_parse_args(argv):
     import argparse
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("channelname", help="channel name to download videos")
+    parser.add_argument("channelnames", nargs="+", help="channel names to download videos")
 
-    parser.add_argument("--id", help="channel id to use for download", action="store")
+#    parser.add_argument("--id", help="channel id to use for download", action="store")
+    parser.add_argument("--dbfile", "--db", help="db filename to use", action="store", type=str, default=".twitchdownloadd.db")
     parser.add_argument("--cache-only", help="only cache master m3u8 list", action="store_true")
     parser.add_argument("--max-retry", help="number of retries when query fails", action="store", type=int, default=5)
     parser.add_argument("--max-workers", help="number of workers to use when downloading video", action="store", type=int, default=8)
     parser.add_argument("--polling-time", help="time period for polling", action="store", type=float, default=60)
 
     args = parser.parse_args()
+    return args
 
-    if args.id is not None:
-        channelid = args.id
-    else:
-        channelid = get_channelid(args.channelname)
-
-    config = {
-        "cache_only": args.cache_only,
-        "max_retry": args.max_retry,
-        "max_workers": args.max_workers,
-        "polling_time": args.polling_time,
-        "channelid": channelid,
-        "channelname": args.channelname,
-    }
-
-    return config
+#    if args.id is not None:
+#        channelid = args.id
+#    else:
+#        channelid = get_channelid(args.channelname)
+#    channelid = get_channelid(args.channelname)
+#
+#    config = {
+#        "cache_only": args.cache_only,
+#        "max_retry": args.max_retry,
+#        "max_workers": args.max_workers,
+#        "polling_time": args.polling_time,
+#        "channelid": channelid,
+#        "channelname": args.channelnames,
+#    }
+#
+#    return config
 
 def parse_args():
     import sys
@@ -408,12 +483,14 @@ def parse_args():
 
 def main():
     config = parse_args()
+    db = channeldb(config.dbfile)
     
     while True:
-        download_videos(config["channelname"], config["channelid"], cache_only=config["cache_only"], max_retry=config["max_retry"], max_workers=config["max_workers"])
+        for channelname in config.channelnames:
+            download_videos(channelname, db, cache_only=config.cache_only, max_retry=config.max_retry, max_workers=config.max_workers)
         
         print(f"\rSleeping at {datetime.now()}", end='')
-        time.sleep(config["polling_time"])
+        time.sleep(config.polling_time)
 
 if __name__ == "__main__":
     main()
