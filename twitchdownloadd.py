@@ -316,6 +316,7 @@ def download_video_by_master_m3u8(master_m3u8_filename):
     except requests.exceptions.RequestException as e:
         print("exception occurred while downloading video by master_m3u8")
         print(e)
+        return e
 
 def download_videos(channelname, db, cache_only=False, **kwargs):
     channelid = db.get_channelid(channelname)
@@ -373,7 +374,9 @@ def download_videos(channelname, db, cache_only=False, **kwargs):
             record = db.get_download_record(channelname, videoid)
             if record["status"] == "pending":
                 try:
-                    download_video_by_master_m3u8(record["master_m3u8"])
+                    ret = download_video_by_master_m3u8(record["master_m3u8"])
+                    if ret is not None:
+                        break
                     record["status"] = "complete"
                     db.set_download_record(channelname, videoid, record)
                 except requests.exceptions.RequestException as e:
