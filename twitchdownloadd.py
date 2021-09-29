@@ -9,8 +9,9 @@ import re
 import os
 import concurrent.futures
 
-apiheaders = {
-    "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+v5headers = {
+    "Client-ID": "37v97169hnj8kaoq8fs3hzz8v6jezdj",
+    "Accept": "application/vnd.twitchtv.v5+json",
 }
 
 gqlurl = "https://gql.twitch.tv/gql"
@@ -192,60 +193,36 @@ def download_video_from_playlist_url(url_playlist, tmpdir, download_filename, ma
 
     join_video(playlist_m3u8_filename, download_filename)
 
-def get_videos(videoid):
-    URL = "https://api.twitch.tv/helix/videos"
-
-    res = requests.get(URL, headers=apiheaders, params={
-            "id": videoid
-        })
-    res.raise_for_status()
-
-    return res
-
 def get_users(username):
-    URL = "https://api.twitch.tv/helix/users"
+    URL = "https://api.twitch.tv/kraken/users"
 
-    res = requests.get(URL, headers=apiheaders, params={
+    res = requests.get(URL, headers=v5headers, params={
         "login": username
     })
     res.raise_for_status()
 
     return res
 
-def get_channel(channelid):
-    URL = "https://api.twitch.tv/helix/channels"
-
-    res = requests.get(URL, headers=apiheaders, params={
-        "broadcaster_id": channelid
-    })
-    res.raise_for_status()
-
-    return res
-
 def get_videos_channel(channelid):
-    URL = "https://api.twitch.tv/helix/videos"
+    URL = f"https://api.twitch.tv/kraken/channels/{channelid}/videos"
 
-    res = requests.get(URL, headers=apiheaders, params={
-        "user_id": channelid
-    })
+    res = requests.get(URL, headers=v5headers)
     res.raise_for_status()
 
     return res
 
 def get_stream(channelid):
-    URL = "https://api.twitch.tv/helix/streams"
+    URL = f"https://api.twitch.tv/kraken/streams/{channelid}"
 
-    res = requests.get(URL, headers=apiheaders, params={
-        "user_id": channelid
-    })
+    res = requests.get(URL, headers=v5headers)
     res.raise_for_status()
 
     return res
 
 def get_channelid(channelname):
-    for channeldata in get_users(channelname).json()["data"]:
-        if channeldata["login"] == channelname:
-            return channeldata["id"]
+    for channeldata in get_users(channelname).json()["users"]:
+        if channeldata["name"] == channelname:
+            return channeldata["_id"]
 
 re_videofile = re.compile(r"(?P<date>\d*)_(?P<id>\d*)_(?P<streamer>\w*?)(_(?P<videoname>\w*))?\.(?P<videoext>\w*)")
 allowed_ext = ["mkv", "mp4"]
@@ -325,7 +302,7 @@ def download_videos(channelname, db, cache_only=False, **kwargs):
         stream_response = get_stream(channelid)
         stream_response = stream_response.json()
 
-        is_live = (len(stream_response["data"]) != 0)
+        is_live = (stream_response["stream"] is not None)
     except requests.exceptions.RequestException as e:
         print("exception occurred while fetching stream information")
         print(e)
@@ -339,11 +316,11 @@ def download_videos(channelname, db, cache_only=False, **kwargs):
         print(e)
         return
     
-    for video in videolist_response["data"]:
-        record = db.get_download_record(channelname, video["id"])
+    for video in videolist_response["videos"]:
+        videoid = video["_id"].removeprefix('v')
+        record = db.get_download_record(channelname, videoid)
         if record is None:
-            videoid = video["id"]
-            publishdate = dateutil.parser.parse(video["published_at"]).astimezone().strftime("%Y%m%d")
+            publishdate = dateutil.parser.isoparse(video["published_at"]).astimezone().strftime("%Y%m%d")
 
             video_filename = f"""{publishdate}_{videoid}_{channelname}.mp4"""
             master_m3u8_filename = f"""index_{publishdate}_{videoid}_{channelname}.m3u8"""
