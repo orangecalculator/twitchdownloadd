@@ -19,6 +19,11 @@ gqlheaders = {
     "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
 }
 
+header = {
+    "v5": v5headers,
+    "gql": gqlheaders,
+}
+
 def query_playbackaccesstoken(videoid):
     ##{
     ##    "operationName": "PlaybackAccessToken",
@@ -432,6 +437,7 @@ def do_parse_args(argv):
 
 #    parser.add_argument("--id", help="channel id to use for download", action="store")
     parser.add_argument("--dbfile", "--db", help="db filename to use", action="store", type=str, default=".twitchdownloadd.db")
+    parser.add_argument("--extra-headers", help="file containing extra headers", action="store", type=str)
     parser.add_argument("--cache-only", help="only cache master m3u8 list", action="store_true")
     parser.add_argument("--max-retry", help="number of retries when query fails", action="store", type=int, default=5)
     parser.add_argument("--max-workers", help="number of workers to use when downloading video", action="store", type=int, default=8)
@@ -457,6 +463,16 @@ def do_parse_args(argv):
 #
 #    return config
 
+def do_init_headers(headerfilename):
+    with open(headerfilename, 'r') as f:
+        extra_header = json.load(f)
+    
+    if not any(map(lambda headername: headername in extra_header.keys(), header.keys())):
+        raise KeyError(f"valid extra headers include {', '.join(map(repr, header.keys()))}")
+
+    for key, added_header_values in extra_header.items():
+        header[key] |= added_header_values
+
 def parse_args():
     import sys
     return do_parse_args(sys.argv)
@@ -464,6 +480,9 @@ def parse_args():
 def main():
     config = parse_args()
     db = channeldb(config.dbfile)
+
+    if config.extra_headers is not None:
+        do_init_headers(config.extra_headers)
     
     while True:
         for channelname in config.channelnames:
