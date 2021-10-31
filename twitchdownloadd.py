@@ -23,6 +23,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
 import requests
 import json
 import time
@@ -511,7 +512,7 @@ def main():
         for channelname in config.channelnames:
             download_videos(channelname, db, cache_only=config.cache_only, max_retry=config.max_retry, max_workers=config.max_workers)
         
-        print(f"\rSleeping at {datetime.now()}", end='')
+        print(f"Sleeping at {datetime.now()}\r", end='')
         time.sleep(config.polling_time)
 
 if __name__ == "__main__":
